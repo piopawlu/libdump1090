@@ -44,7 +44,6 @@
 #include <sys/ioctl.h>
 #include <sys/select.h>
 #include <rtl-sdr.h>
-#include "anet.h"
 
 #define MODES_DEFAULT_RATE         2000000
 #define MODES_DEFAULT_FREQ         1090000000
@@ -126,7 +125,6 @@ struct {
     int freq;
 
     /* Networking */
-    char aneterr[ANET_ERR_LEN];
 //    struct client *clients[MODES_NET_MAX_FD]; /* Our clients. */
     int maxfd;                      /* Greatest fd currently active. */
     int sbsos;                      /* SBS output listening socket. */
@@ -699,7 +697,7 @@ int bruteForceAP(unsigned char *msg, struct modesMessage *mm) {
  * structure. */
 void decodeModesMessage(struct modesMessage *mm, unsigned char *msg) {
     uint32_t crc2;   /* Computed CRC, used to verify the message CRC. */
-    char *ais_charset = "?ABCDEFGHIJKLMNOPQRSTUVWXYZ????? ???????????????0123456789??????";
+//    char *ais_charset = "?ABCDEFGHIJKLMNOPQRSTUVWXYZ????? ???????????????0123456789??????";
 
     /* Work on our local copy */
     memcpy(mm->msg,msg,MODES_LONG_MSG_BYTES);
