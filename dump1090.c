@@ -52,6 +52,8 @@
  #define round(a) ((int)((a) + 0.5f))
 #endif
 
+#include "dump1090.h"
+
 #define MODES_DEFAULT_RATE         2000000
 #define MODES_DEFAULT_FREQ         1090000000
 #define MODES_DEFAULT_WIDTH        1000
@@ -1260,41 +1262,55 @@ void modesSendRawOutput(struct modesMessage *mm) {
     //modesSendAllClients(Modes.ros, msg, p-msg);
 }
 
-/* ============================ Terminal handling  ========================== */
+/* ============================ Library interface  ========================== */
 
-int main(int argc, char **argv) {
-    int j;
+int DLLEXPORT dump1090_setCallback(RAWCB fpCallback)
+{
     
+    
+    return 0;
+}
+
+int DLLEXPORT dump1090_initialize(int argc, char** argv)
+{
     /* Set sane defaults. */
     modesInitConfig();
-    
-    /* Parse the command line options */
-    for (j = 1; j < argc; j++) {
-        int more = j+1 < argc; /* There are more arguments. */
-        
-        if (!strcmp(argv[j],"--device-index") && more) {
-            Modes.dev_index = atoi(argv[++j]);
-        } else if (!strcmp(argv[j],"--gain") && more) {
-            Modes.gain = atof(argv[++j])*10; /* Gain is in tens of DBs */
-        } else if (!strcmp(argv[j],"--enable-agc")) {
-            Modes.enable_agc++;
-        } else if (!strcmp(argv[j],"--ifile") && more) {
-            Modes.filename = strdup(argv[++j]);
-        } else if (!strcmp(argv[j],"--no-fix")) {
-            Modes.fix_errors = 0;
-        } else if (!strcmp(argv[j],"--no-crc-check")) {
-            Modes.check_crc = 0;
-        }
-    }
-    
-    /* Initialization */
     modesInit();
     modesInitRTLSDR();
     
+    return 0;
+}
+
+int DLLEXPORT dump1090_start()
+{
+    Modes.exit = 0;
+    
     /* Create the thread that will read the data from the device. */
     pthread_create(&Modes.reader_thread, NULL, readerThreadEntryPoint, NULL);
-    
     pthread_mutex_lock(&Modes.data_mutex);
+
+    
+    return 0;
+}
+
+int DLLEXPORT dump1090_stop()
+{
+    Modes.exit = 1;
+    
+    while( Modes.exit == 1 ) {
+        sleep(1);
+    }
+    
+    rtlsdr_close(Modes.dev);
+    return 0;
+}
+
+/* ============================ Terminal handling  ========================== */
+
+int main(int argc, char **argv) {
+    
+    dump1090_initialize(argc, argv);
+    dump1090_start();
     
     while(1)
     {
@@ -1327,6 +1343,6 @@ int main(int argc, char **argv) {
         if (Modes.exit) break;
     }
     
-    rtlsdr_close(Modes.dev);
+    dump1090_stop();
     return 0;
 }
