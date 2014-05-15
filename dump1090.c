@@ -115,6 +115,7 @@ struct aircraft {
 struct {
     /* Internal state */
     pthread_t reader_thread;
+    pthread_t async_thread;
     pthread_mutex_t data_mutex;     /* Mutex to synchronize buffer access. */
 #ifndef WIN32
     pthread_cond_t data_cond;       /* Conditional variable associated. */
@@ -126,7 +127,7 @@ struct {
     int data_ready;                 /* Data ready to be processed. */
     uint32_t *icao_cache;           /* Recently seen ICAO addresses cache. */
     uint16_t *maglut;               /* I/Q -> Magnitude lookup table. */
-    int exit;                       /* Exit from the main loop when true. */
+    volatile int exit;              /* Exit from the main loop when true. */
     
     /* RTLSDR */
     int dev_index;
@@ -174,6 +175,10 @@ struct {
     long long stat_http_requests;
     long long stat_sbs_connections;
     long long stat_out_of_phase;
+    
+    /* DLL callback */
+    RAWCB fpRawCallback;
+    void* fpRawCallbackParameter;
 } Modes;
 
 /* The struct we use to store information about a decoded message. */
@@ -302,6 +307,8 @@ void modesInit(void) {
     Modes.stat_sbs_connections = 0;
     Modes.stat_out_of_phase = 0;
     Modes.exit = 0;
+    Modes.fpRawCallback = NULL;
+    Modes.fpRawCallbackParameter = NULL;
 }
 
 /* =============================== RTLSDR handling ========================== */
@@ -390,6 +397,9 @@ void *readerThreadEntryPoint(void *arg) {
     rtlsdr_read_async(Modes.dev, rtlsdrCallback, NULL,
                       MODES_ASYNC_BUF_NUMBER,
                       MODES_DATA_LEN);
+    
+    
+    Modes.exit --;
     return NULL;
 }
 
@@ -1247,31 +1257,94 @@ void snipMode(int level) {
 
 
 /* Write raw output to TCP clients. */
-void modesSendRawOutput(struct modesMessage *mm) {
-    char msg[128], *p = msg;
-    int j;
-    
-    *p++ = '*';
-    for (j = 0; j < (mm->msgbits/8); j++) {
-        sprintf(p, "%02X", mm->msg[j]);
-        p += 2;
+void modesSendRawOutput(struct modesMessage *mm)
+{
+    if( Modes.fpRawCallback )
+    {
+        Modes.fpRawCallback(mm->msg, mm->msgbits / 8, Modes.fpRawCallbackParameter);
     }
-    *p++ = ';';
-    *p++ = '\0';
-    puts(msg);
+    else
+    {
+        char msg[128], *p = msg;
+        int j;
+        
+        *p++ = '*';
+        for (j = 0; j < (mm->msgbits/8); j++) {
+            sprintf(p, "%02X", mm->msg[j]);
+            p += 2;
+        }
+        *p++ = ';';
+        *p++ = '\0';
+        puts(msg);
+    }
     //modesSendAllClients(Modes.ros, msg, p-msg);
 }
 
 /* ============================ Library interface  ========================== */
 
-int DLLEXPORT dump1090_setCallback(RAWCB fpCallback)
+int DLLEXPORT CALLTYPE dump1090_read(int blocking)
 {
+    if (!Modes.data_ready) {
+        
+        if( !blocking ) {
+            return 0;
+        }
+        
+        while( !Modes.data_ready && Modes.exit == 0 )
+        {
+#ifndef WIN32
+            pthread_cond_wait(&Modes.data_cond,&Modes.data_mutex);
+#else
+            Sleep(50);
+#endif
+        }
+
+    }
     
+    computeMagnitudeVector();
+    
+    /* Signal to the other thread that we processed the available data
+     * and we want more (useful for --ifile). */
+    Modes.data_ready = 0;
+#ifndef WIN32
+    pthread_cond_signal(&Modes.data_cond);
+#endif
+    
+    /* Process data after releasing the lock, so that the capturing
+     * thread can read data while we perform computationally expensive
+     * stuff * at the same time. (This should only be useful with very
+     * slow processors). */
+    pthread_mutex_unlock(&Modes.data_mutex);
+    
+    detectModeS(Modes.magnitude, Modes.data_len/2);
+    
+    pthread_mutex_lock(&Modes.data_mutex);
+    
+    return 1;
+}
+
+void* dump1090_async_thread(void* dummy)
+{
+    while(1) {
+        dump1090_read(1);
+        if (Modes.exit) break;
+    }
+    
+    Modes.exit --;
+    
+    pthread_detach(pthread_self());
+    return NULL;
+}
+
+int CALLTYPE dump1090_setCallback(RAWCB fpCallback, void* custom_parameter)
+{
+    Modes.fpRawCallbackParameter = custom_parameter;
+    Modes.fpRawCallback = fpCallback;
     
     return 0;
 }
 
-int DLLEXPORT dump1090_initialize(int argc, char** argv)
+int CALLTYPE dump1090_initialize(int argc, char** argv)
 {
     /* Set sane defaults. */
     modesInitConfig();
@@ -1281,23 +1354,28 @@ int DLLEXPORT dump1090_initialize(int argc, char** argv)
     return 0;
 }
 
-int DLLEXPORT dump1090_start()
+int CALLTYPE dump1090_start(int async)
 {
     Modes.exit = 0;
     
     /* Create the thread that will read the data from the device. */
     pthread_create(&Modes.reader_thread, NULL, readerThreadEntryPoint, NULL);
     pthread_mutex_lock(&Modes.data_mutex);
-
     
-    return 0;
+    if( async == 1 ) {
+        return pthread_create(&Modes.async_thread, NULL, dump1090_async_thread, NULL);
+    } else {
+        return 0;
+    }
 }
 
-int DLLEXPORT dump1090_stop()
+int CALLTYPE dump1090_stop()
 {
-    Modes.exit = 1;
+    Modes.exit = 2;
     
-    while( Modes.exit == 1 ) {
+    rtlsdr_cancel_async(Modes.dev);
+    
+    while( Modes.exit != 0 ) {
         sleep(1);
     }
     
@@ -1310,38 +1388,9 @@ int DLLEXPORT dump1090_stop()
 int main(int argc, char **argv) {
     
     dump1090_initialize(argc, argv);
-    dump1090_start();
-    
-    while(1)
-    {
-        if (!Modes.data_ready) {
-#ifndef WIN32
-            pthread_cond_wait(&Modes.data_cond,&Modes.data_mutex);
-#else
-			Sleep(50);
-#endif
-            continue;
-        }
-        computeMagnitudeVector();
-        
-        /* Signal to the other thread that we processed the available data
-         * and we want more (useful for --ifile). */
-        Modes.data_ready = 0;
-#ifndef WIN32
-        pthread_cond_signal(&Modes.data_cond);
-#endif
-        
-        /* Process data after releasing the lock, so that the capturing
-         * thread can read data while we perform computationally expensive
-         * stuff * at the same time. (This should only be useful with very
-         * slow processors). */
-        pthread_mutex_unlock(&Modes.data_mutex);
-        
-        detectModeS(Modes.magnitude, Modes.data_len/2);
-        
-        pthread_mutex_lock(&Modes.data_mutex);
-        if (Modes.exit) break;
-    }
+    dump1090_start(1);
+
+    sleep(30);
     
     dump1090_stop();
     return 0;

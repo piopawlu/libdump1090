@@ -17,6 +17,7 @@
     #define DLLEXPORT __declspec(dllimport)
 #endif
     #define CALLTYPE __stdcall
+	#define sleep(a) Sleep((a)*1000)
 #else
     #define DLLEXPORT
     #define CALLTYPE
@@ -24,9 +25,10 @@
 
 typedef int (*RAWCB)(uint8_t* data, uint32_t length, void* custom);
 
-int CALLTYPE DLLEXPORT dump1090_setCallback(RAWCB fpCallback);
-int CALLTYPE DLLEXPORT dump1090_initialize(int argc, char** argv);
-int CALLTYPE DLLEXPORT dump1090_start();
-int CALLTYPE DLLEXPORT dump1090_stop();
+int DLLEXPORT CALLTYPE dump1090_setCallback(RAWCB fpCallback, void* custom_parameter);
+int DLLEXPORT CALLTYPE dump1090_initialize(int argc, char** argv);
+int DLLEXPORT CALLTYPE dump1090_start(int async);
+int DLLEXPORT CALLTYPE dump1090_stop();
+int DLLEXPORT CALLTYPE dump1090_read(int blocking);
 
 #endif
