@@ -124,7 +124,7 @@ struct {
     uint16_t *magnitude;            /* Magnitude vector */
     uint32_t data_len;              /* Buffer length. */
     int fd;                         /* --ifile option file descriptor. */
-    int data_ready;                 /* Data ready to be processed. */
+    volatile int data_ready;        /* Data ready to be processed. */
     uint32_t *icao_cache;           /* Recently seen ICAO addresses cache. */
     uint16_t *maglut;               /* I/Q -> Magnitude lookup table. */
     volatile int exit;              /* Exit from the main loop when true. */
@@ -1288,19 +1288,22 @@ int DLLEXPORT CALLTYPE dump1090_read(int blocking)
         
         if( !blocking ) {
             return 0;
-        }
-        
-        while( !Modes.data_ready && Modes.exit == 0 )
-        {
+        } else {
+            pthread_mutex_lock(&Modes.data_mutex);
+            while( !Modes.data_ready && Modes.exit == 0 )
+            {
 #ifndef WIN32
-            pthread_cond_wait(&Modes.data_cond,&Modes.data_mutex);
+                pthread_cond_wait(&Modes.data_cond,&Modes.data_mutex);
 #else
-            Sleep(50);
+                Sleep(50);
 #endif
+            }
+            pthread_mutex_unlock(&Modes.data_mutex);
         }
 
     }
     
+    pthread_mutex_lock(&Modes.data_mutex);
     computeMagnitudeVector();
     
     /* Signal to the other thread that we processed the available data
@@ -1317,9 +1320,6 @@ int DLLEXPORT CALLTYPE dump1090_read(int blocking)
     pthread_mutex_unlock(&Modes.data_mutex);
     
     detectModeS(Modes.magnitude, Modes.data_len/2);
-    
-    pthread_mutex_lock(&Modes.data_mutex);
-    
     return 1;
 }
 
@@ -1360,7 +1360,6 @@ int CALLTYPE dump1090_start(int async)
     
     /* Create the thread that will read the data from the device. */
     pthread_create(&Modes.reader_thread, NULL, readerThreadEntryPoint, NULL);
-    pthread_mutex_lock(&Modes.data_mutex);
     
     if( async == 1 ) {
         return pthread_create(&Modes.async_thread, NULL, dump1090_async_thread, NULL);
@@ -1388,9 +1387,15 @@ int CALLTYPE dump1090_stop()
 int main(int argc, char **argv) {
     
     dump1090_initialize(argc, argv);
-    dump1090_start(1);
+    dump1090_start(0);
 
-    sleep(30);
+    time_t end = time(0) + 180;
+    while(time(0) < end) {
+        if( dump1090_read(0) == 0 ) {
+            usleep(10000);
+        }
+        
+    }
     
     dump1090_stop();
     return 0;
