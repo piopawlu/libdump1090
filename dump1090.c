@@ -50,6 +50,7 @@
  #include <time.h>
  #include "pthread.h"
  #define round(a) ((int)((a) + 0.5f))
+ #define usleep(a) Sleep(a/1000)
 #endif
 
 #include "dump1090.h"
@@ -997,6 +998,8 @@ void detectModeS(uint16_t *m, uint32_t mlen) {
     uint16_t aux[MODES_LONG_MSG_BITS*2];
     uint32_t j;
     int use_correction = 0;
+	int msgtype;
+	int msglen;
     
     /* The Mode S preamble is made of impulses of 0.5 microseconds at
      * the following time offsets:
@@ -1135,8 +1138,8 @@ void detectModeS(uint16_t *m, uint32_t mlen) {
             bits[i+7];
         }
         
-        int msgtype = msg[0]>>3;
-        int msglen = modesMessageLenByType(msgtype)/8;
+        msgtype = msg[0]>>3;
+        msglen = modesMessageLenByType(msgtype)/8;
         
         /* Last check, high and low bits are different enough in magnitude
          * to mark this as real message and not just noise? */
@@ -1387,11 +1390,12 @@ int CALLTYPE dump1090_stop()
 /* ============================ Terminal handling  ========================== */
 
 int main(int argc, char **argv) {
-    
+    time_t end;
+
     dump1090_initialize(argc, argv);
     dump1090_start(0);
 
-    time_t end = time(0) + 180;
+    end = time(0) + 180;
     while(time(0) < end) {
         if( dump1090_read(0) == 0 ) {
             usleep(10000);
