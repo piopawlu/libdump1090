@@ -128,6 +128,7 @@ struct {
     uint32_t *icao_cache;           /* Recently seen ICAO addresses cache. */
     uint16_t *maglut;               /* I/Q -> Magnitude lookup table. */
     volatile int exit;              /* Exit from the main loop when true. */
+    int is_async;
     
     /* RTLSDR */
     int dev_index;
@@ -1362,6 +1363,7 @@ int CALLTYPE dump1090_start(int async)
     pthread_create(&Modes.reader_thread, NULL, readerThreadEntryPoint, NULL);
     
     if( async == 1 ) {
+        Modes.is_async = 1;
         return pthread_create(&Modes.async_thread, NULL, dump1090_async_thread, NULL);
     } else {
         return 0;
@@ -1370,7 +1372,7 @@ int CALLTYPE dump1090_start(int async)
 
 int CALLTYPE dump1090_stop()
 {
-    Modes.exit = 2;
+    Modes.exit = (Modes.is_async) ? 2 : 1;
     
     rtlsdr_cancel_async(Modes.dev);
     
