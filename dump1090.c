@@ -278,7 +278,7 @@ void modesInit(void) {
     Modes.interactive_last_update = 0;
     if ((Modes.data = (uint8_t*)malloc(Modes.data_len)) == NULL ||
         (Modes.magnitude = (uint16_t*)malloc(Modes.data_len*2)) == NULL) {
-        fprintf(stderr, "Out of memory allocating data buffer.\n");
+        fprintf(stderr, "[dvbt][e]Out of memory allocating data buffer.\n");
         exit(1);
     }
     memset(Modes.data,127,Modes.data_len);
@@ -323,19 +323,19 @@ void modesInitRTLSDR(void) {
     
     device_count = rtlsdr_get_device_count();
     if (!device_count) {
-        fprintf(stderr, "No supported RTLSDR devices found.\n");
+        fprintf(stderr, "[dvbt][e]No supported RTLSDR devices found.\n");
         exit(1);
     }
     
-    fprintf(stderr, "Found %d device(s):\n", device_count);
+    fprintf(stderr, "[dvbt][i]Found %d device(s):\n", device_count);
     for (j = 0; j < device_count; j++) {
         rtlsdr_get_device_usb_strings(j, vendor, product, serial);
-        fprintf(stderr, "%d: %s, %s, SN: %s %s\n", j, vendor, product, serial,
+        fprintf(stderr, "[dvbt][i]%d: %s, %s, SN: %s %s\n", j, vendor, product, serial,
                 (j == Modes.dev_index) ? "(currently selected)" : "");
     }
     
     if (rtlsdr_open(&Modes.dev, Modes.dev_index) < 0) {
-        fprintf(stderr, "Error opening the RTLSDR device: %s\n",
+        fprintf(stderr, "[dvbt][e]Error opening the RTLSDR device: %s\n",
                 strerror(errno));
         exit(1);
     }
@@ -351,19 +351,19 @@ void modesInitRTLSDR(void) {
             
             numgains = rtlsdr_get_tuner_gains(Modes.dev, gains);
             Modes.gain = gains[numgains-1];
-            fprintf(stderr, "Max available gain is: %.2f\n", Modes.gain/10.0);
+            fprintf(stderr, "[dvbt][i]Max available gain is: %.2f\n", Modes.gain/10.0);
         }
         rtlsdr_set_tuner_gain(Modes.dev, Modes.gain);
-        fprintf(stderr, "Setting gain to: %.2f\n", Modes.gain/10.0);
+        fprintf(stderr, "[dvbt][i]Setting gain to: %.2f\n", Modes.gain/10.0);
     } else {
-        fprintf(stderr, "Using automatic gain control.\n");
+        fprintf(stderr, "[dvbt][e]Using automatic gain control.\n");
     }
     rtlsdr_set_freq_correction(Modes.dev, ppm_error);
     if (Modes.enable_agc) rtlsdr_set_agc_mode(Modes.dev, 1);
     rtlsdr_set_center_freq(Modes.dev, Modes.freq);
     rtlsdr_set_sample_rate(Modes.dev, MODES_DEFAULT_RATE);
     rtlsdr_reset_buffer(Modes.dev);
-    fprintf(stderr, "Gain reported by device: %.2f\n",
+    fprintf(stderr, "[dvbt][i]Gain reported by device: %.2f\n",
             rtlsdr_get_tuner_gain(Modes.dev)/10.0);
 }
 
@@ -403,93 +403,6 @@ void *readerThreadEntryPoint(void *arg) {
     
     Modes.exit --;
     return NULL;
-}
-
-/* ============================== Debugging ================================= */
-
-/* Helper function for dumpMagnitudeVector().
- * It prints a single bar used to display raw signals.
- *
- * Since every magnitude sample is between 0-255, the function uses
- * up to 63 characters for every bar. Every character represents
- * a length of 4, 3, 2, 1, specifically:
- *
- * "O" is 4
- * "o" is 3
- * "-" is 2
- * "." is 1
- */
-void dumpMagnitudeBar(int index, int magnitude) {
-    char *set = " .-o";
-    char buf[256];
-    int div = magnitude / 256 / 4;
-    int rem = magnitude / 256 % 4;
-    
-    memset(buf,'O',div);
-    buf[div] = set[rem];
-    buf[div+1] = '\0';
-    
-    if (index >= 0)
-        printf("[%.3d] |%-66s %d\n", index, buf, magnitude);
-    else
-        printf("[%.2d] |%-66s %d\n", index, buf, magnitude);
-}
-
-/* Display an ASCII-art alike graphical representation of the undecoded
- * message as a magnitude signal.
- *
- * The message starts at the specified offset in the "m" buffer.
- * The function will display enough data to cover a short 56 bit message.
- *
- * If possible a few samples before the start of the messsage are included
- * for context. */
-
-void dumpMagnitudeVector(uint16_t *m, uint32_t offset) {
-    uint32_t padding = 5; /* Show a few samples before the actual start. */
-    uint32_t start = (offset < padding) ? 0 : offset-padding;
-    uint32_t end = offset + (MODES_PREAMBLE_US*2)+(MODES_SHORT_MSG_BITS*2) - 1;
-    uint32_t j;
-    
-    for (j = start; j <= end; j++) {
-        dumpMagnitudeBar(j-offset, m[j]);
-    }
-}
-
-/* This is a wrapper for dumpMagnitudeVector() that also show the message
- * in hex format with an additional description.
- *
- * descr  is the additional message to show to describe the dump.
- * msg    points to the decoded message
- * m      is the original magnitude vector
- * offset is the offset where the message starts
- *
- * The function also produces the Javascript file used by debug.html to
- * display packets in a graphical format if the Javascript output was
- * enabled.
- */
-void dumpRawMessage(char *descr, unsigned char *msg,
-                    uint16_t *m, uint32_t offset)
-{
-    int j;
-    int msgtype = msg[0]>>3;
-    int fixable = -1;
-    
-    if (msgtype == 11 || msgtype == 17) {
-        int msgbits = (msgtype == 11) ? MODES_SHORT_MSG_BITS :
-        MODES_LONG_MSG_BITS;
-        fixable = fixSingleBitErrors(msg,msgbits);
-        if (fixable == -1)
-            fixable = fixTwoBitsErrors(msg,msgbits);
-    }
-    
-    printf("\n--- %s\n    ", descr);
-    for (j = 0; j < MODES_LONG_MSG_BYTES; j++) {
-        printf("%02x",msg[j]);
-        if (j == MODES_SHORT_MSG_BYTES-1) printf(" ... ");
-    }
-    printf(" (DF %d, Fixable: %d)\n", msgtype, fixable);
-    dumpMagnitudeVector(m,offset);
-    printf("---\n\n");
 }
 
 /* ===================== Mode S detection and decoding  ===================== */
@@ -1044,10 +957,6 @@ void detectModeS(uint16_t *m, uint32_t mlen) {
               m[j+8] < m[j+9] &&
               m[j+9] > m[j+6]))
         {
-            if (Modes.debug & MODES_DEBUG_NOPREAMBLE &&
-                m[j] > MODES_DEBUG_NOPREAMBLE_LEVEL)
-                dumpRawMessage("Unexpected ratio among first 10 samples",
-                               msg, m, j);
             continue;
         }
         
@@ -1059,11 +968,6 @@ void detectModeS(uint16_t *m, uint32_t mlen) {
         if (m[j+4] >= high ||
             m[j+5] >= high)
         {
-            if (Modes.debug & MODES_DEBUG_NOPREAMBLE &&
-                m[j] > MODES_DEBUG_NOPREAMBLE_LEVEL)
-                dumpRawMessage(
-                               "Too high level in samples between 3 and 6",
-                               msg, m, j);
             continue;
         }
         
@@ -1075,11 +979,6 @@ void detectModeS(uint16_t *m, uint32_t mlen) {
             m[j+13] >= high ||
             m[j+14] >= high)
         {
-            if (Modes.debug & MODES_DEBUG_NOPREAMBLE &&
-                m[j] > MODES_DEBUG_NOPREAMBLE_LEVEL)
-                dumpRawMessage(
-                               "Too high level in samples between 10 and 15",
-                               msg, m, j);
             continue;
         }
         Modes.stat_valid_preamble++;
@@ -1185,19 +1084,6 @@ void detectModeS(uint16_t *m, uint32_t mlen) {
                 }
             }
             
-            /* Output debug mode info if needed. */
-            if (use_correction) {
-                if (Modes.debug & MODES_DEBUG_DEMOD)
-                    dumpRawMessage("Demodulated with 0 errors", msg, m, j);
-                else if (Modes.debug & MODES_DEBUG_BADCRC &&
-                         mm.msgtype == 17 &&
-                         (!mm.crcok || mm.errorbit != -1))
-                    dumpRawMessage("Decoded with bad CRC", msg, m, j);
-                else if (Modes.debug & MODES_DEBUG_GOODCRC && mm.crcok &&
-                         mm.errorbit == -1)
-                    dumpRawMessage("Decoded with good CRC", msg, m, j);
-            }
-            
             /* Skip this message if we are sure it's fine. */
             if (mm.crcok) {
                 j += (MODES_PREAMBLE_US+(msglen*8))*2;
@@ -1208,11 +1094,6 @@ void detectModeS(uint16_t *m, uint32_t mlen) {
             
             /* Pass data to the next layer */
             useModesMessage(&mm);
-        } else {
-            if (Modes.debug & MODES_DEBUG_DEMODERR && use_correction) {
-                printf("The following message has %d demod errors\n", errors);
-                dumpRawMessage("Demodulated with errors", msg, m, j);
-            }
         }
         
         /* Retry with phase correction if possible. */
