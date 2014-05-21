@@ -12,11 +12,11 @@
 
 #ifdef WIN32
 #if EXPORT==1
-    #define DLLEXPORT __declspec(dllexport)
+	#define DLLEXPORT __declspec(dllexport)
 #else
     #define DLLEXPORT __declspec(dllimport)
 #endif
-    #define CALLTYPE __stdcall
+    #define CALLTYPE __cdecl
 	#define sleep(a) Sleep((a)*1000)
 #else
     #define DLLEXPORT
