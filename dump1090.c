@@ -1235,11 +1235,12 @@ int CALLTYPE dump1090_setCallback(RAWCB fpCallback, void* custom_parameter)
 
 int CALLTYPE dump1090_initialize(int argc, char** argv)
 {
+	int i=0;
     /* Set sane defaults. */
     modesInitConfig();
     modesInit();
     
-    for(int i=0; i<argc; i++) {
+    for(i=0; i<argc; i++) {
         char* arg = argv[i];
         char* eq  = strchr(arg, '=');
         char* val = eq + 1;
