@@ -137,6 +137,7 @@ struct {
     int enable_agc;
     rtlsdr_dev_t *dev;
     int freq;
+    int ppm_error;
     
     /* Networking */
     //    struct client *clients[MODES_NET_MAX_FD]; /* Our clients. */
@@ -238,10 +239,11 @@ void decodeModesMessage(struct modesMessage *mm, unsigned char *msg);
 /* =============================== Initialization =========================== */
 
 void modesInitConfig(void) {
-    Modes.gain = MODES_MAX_GAIN;
+    Modes.gain = MODES_AUTO_GAIN;
     Modes.dev_index = 0;
-    Modes.enable_agc = 0;
+    Modes.enable_agc = 1;
     Modes.freq = MODES_DEFAULT_FREQ;
+    Modes.ppm_error = 0;
     Modes.filename = NULL;
     Modes.fix_errors = 1;
     Modes.check_crc = 1;
@@ -318,7 +320,6 @@ void modesInit(void) {
 void modesInitRTLSDR(void) {
     int j;
     int device_count;
-    int ppm_error = 0;
     char vendor[256], product[256], serial[256];
     
     device_count = rtlsdr_get_device_count();
@@ -356,9 +357,12 @@ void modesInitRTLSDR(void) {
         rtlsdr_set_tuner_gain(Modes.dev, Modes.gain);
         fprintf(stderr, "[dvbt][i]Setting gain to: %.2f\n", Modes.gain/10.0);
     } else {
-        fprintf(stderr, "[dvbt][e]Using automatic gain control.\n");
+        fprintf(stderr, "[dvbt][i]Using automatic gain control.\n");
     }
-    rtlsdr_set_freq_correction(Modes.dev, ppm_error);
+    if( Modes.ppm_error != 0) {
+        fprintf(stderr, "[dvbt][i]Setting ppm error to: %d\n", Modes.ppm_error);
+    }
+    rtlsdr_set_freq_correction(Modes.dev, Modes.ppm_error);
     if (Modes.enable_agc) rtlsdr_set_agc_mode(Modes.dev, 1);
     rtlsdr_set_center_freq(Modes.dev, Modes.freq);
     rtlsdr_set_sample_rate(Modes.dev, MODES_DEFAULT_RATE);
@@ -1234,6 +1238,34 @@ int CALLTYPE dump1090_initialize(int argc, char** argv)
     /* Set sane defaults. */
     modesInitConfig();
     modesInit();
+    
+    for(int i=0; i<argc; i++) {
+        char* arg = argv[i];
+        char* eq  = strchr(arg, '=');
+        char* val = eq + 1;
+        
+        if( !eq ) {
+            continue;
+        } else {
+            *eq = 0;
+        }
+        
+        if( strcmp(arg,"--gain") == 0 ) {
+            if( strcmp( val, "auto") == 0 ) {
+                Modes.gain = MODES_AUTO_GAIN;
+                Modes.enable_agc = 1;
+            } else if( strcmp( val, "max") == 0 ) {
+                Modes.gain = MODES_MAX_GAIN;
+                Modes.enable_agc = 0;
+            } else {
+                Modes.enable_agc = 0;
+                Modes.gain = atoi(val);
+            }
+        } else if( strcmp(arg, "--ppm") == 0 ) {
+            Modes.ppm_error = atoi(val);
+        }
+    }
+    
     modesInitRTLSDR();
     
     return 0;
