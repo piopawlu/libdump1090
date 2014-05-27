@@ -1298,6 +1298,7 @@ int CALLTYPE dump1090_stop()
     }
     
     rtlsdr_close(Modes.dev);
+	pthread_mutex_destroy(&Modes.data_mutex);
     return 0;
 }
 
