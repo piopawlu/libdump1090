@@ -22,6 +22,7 @@ int pthread_mutex_destroy(pthread_mutex_t*);
 int pthread_mutex_init(pthread_mutex_t*, void*);
 int pthread_cond_init(pthread_cond_t*, void*);
 int pthread_cond_signal(pthread_cond_t*);
+int pthread_cond_destroy(pthread_cond_t*);
 #define pthread_cancel(a)
 #define pthread_self() (unsigned long)(GetCurrentThread())
 #define pthread_exit(a)

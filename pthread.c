@@ -76,3 +76,9 @@ int pthread_cond_signal(pthread_cond_t* c)
 	SetEvent(*c);
 	return 0;
 }
+
+int pthread_cond_destroy(pthread_cond_t* c)
+{
+	CloseHandle(*c);
+	return 0;
+}

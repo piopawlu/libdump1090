@@ -1296,6 +1296,7 @@ int CALLTYPE dump1090_stop()
     
     rtlsdr_close(Modes.dev);
 	pthread_mutex_destroy(&Modes.data_mutex);
+	pthread_cond_destroy(&Modes.data_cond);
     return 0;
 }
 
