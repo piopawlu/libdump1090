@@ -118,9 +118,8 @@ struct {
     pthread_t reader_thread;
     pthread_t async_thread;
     pthread_mutex_t data_mutex;     /* Mutex to synchronize buffer access. */
-#ifndef WIN32
     pthread_cond_t data_cond;       /* Conditional variable associated. */
-#endif
+
     unsigned char *data;            /* Raw IQ samples buffer */
     uint16_t *magnitude;            /* Magnitude vector */
     uint32_t data_len;              /* Buffer length. */
@@ -261,9 +260,7 @@ void modesInit(void) {
     int i, q;
     
     pthread_mutex_init(&Modes.data_mutex,NULL);
-#ifndef WIN32
     pthread_cond_init(&Modes.data_cond,NULL);
-#endif
     
     /* We add a full message minus a final bit to the length, so that we
      * can carry the remaining part of the buffer that we can't process
@@ -389,9 +386,7 @@ void rtlsdrCallback(unsigned char *buf, uint32_t len, void *ctx) {
     memcpy(Modes.data+(MODES_FULL_LEN-1)*4, buf, len);
     Modes.data_ready = 1;
     /* Signal to the other thread that new data is ready */
-#ifndef WIN32
     pthread_cond_signal(&Modes.data_cond);
-#endif
     pthread_mutex_unlock(&Modes.data_mutex);
 }
 
@@ -1184,7 +1179,9 @@ int DLLEXPORT CALLTYPE dump1090_read(int blocking)
 #ifndef WIN32
                 pthread_cond_wait(&Modes.data_cond,&Modes.data_mutex);
 #else
-                Sleep(50);
+				pthread_mutex_unlock(&Modes.data_mutex);
+				WaitForSingleObject(Modes.data_cond, 2000);
+				pthread_mutex_lock(&Modes.data_mutex);
 #endif
             }
             pthread_mutex_unlock(&Modes.data_mutex);
