@@ -1168,10 +1168,29 @@ void modesSendRawOutput(struct modesMessage *mm)
 
 int DLLEXPORT CALLTYPE dump1090_read(int blocking)
 {
+#ifndef WIN32
+    struct timespec   ts;
+    struct timeval    tp;
+#endif
+    
     if (!Modes.data_ready) {
         
         if( !blocking ) {
-            return 0;
+#ifdef WIN32
+			WaitForSingleObject(Modes.data_cond, 50);
+#else
+            gettimeofday(&tp, NULL);
+            ts.tv_sec  = tp.tv_sec + 1;
+            ts.tv_nsec = tp.tv_usec * 1000;
+            
+            pthread_mutex_lock(&Modes.data_mutex);
+            pthread_cond_timedwait(&Modes.data_cond, &Modes.data_mutex, &ts);
+            pthread_mutex_unlock(&Modes.data_mutex);
+#endif
+            if( !Modes.data_ready ) {
+				return 0;
+			}
+            
         } else {
             pthread_mutex_lock(&Modes.data_mutex);
             while( !Modes.data_ready && Modes.exit == 0 )
