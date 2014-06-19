@@ -1305,6 +1305,10 @@ int CALLTYPE dump1090_start(int async)
 
 int CALLTYPE dump1090_stop()
 {
+    if( Modes.exit == -1 ) {
+        return 0;
+    }
+    
     Modes.exit = (Modes.is_async) ? 2 : 1;
     
     rtlsdr_cancel_async(Modes.dev);
@@ -1316,6 +1320,8 @@ int CALLTYPE dump1090_stop()
     rtlsdr_close(Modes.dev);
 	pthread_mutex_destroy(&Modes.data_mutex);
 	pthread_cond_destroy(&Modes.data_cond);
+    
+    Modes.exit = -1;
     return 0;
 }
 
